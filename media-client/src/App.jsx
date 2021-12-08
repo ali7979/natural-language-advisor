@@ -5,7 +5,6 @@ import axios from "axios";
 function App() {
   const [file, setFile] = React.useState(null);
   const [files, setFiles] = React.useState([]);
-
   const filehandler = (e) => {
     if (e.target.files != null || e.target.files[0] != null) {
       setFile(e.target.files[0]);
