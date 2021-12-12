@@ -27,7 +27,7 @@ const storage = new GridFsStorage({
         if (err) {
           return reject(err);
         }
-        // turn the random bytes into a string and add the file extention at the end of it (.png or .jpg)
+        // turn the random bytes into a string and add the file extentsion at the end of it (.mp4)
         // this way our file names will not collide if someone uploads the same file twice
         const filename = buf.toString("hex") + path.extname(file.originalname);
         const fileInfo = {
@@ -42,10 +42,9 @@ const storage = new GridFsStorage({
 });
 
 // set up our multer to use the gridfs storage defined above
+
 const store = multer({
   storage,
-  // limit the size to 20mb for any files coming in
-  // filer out invalid filetypes
   fileFilter: function (req, file, cb) {
     checkFileType(file, cb);
   },
@@ -53,7 +52,7 @@ const store = multer({
 
 function checkFileType(file, cb) {
   const filetypes = /mp4|mov|mkv/;
-  //check the file extention
+  //check the file extension
   const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
   // more importantly, check the mimetype
   const mimetype = filetypes.test(file.mimetype);
@@ -67,10 +66,11 @@ const uploadMiddleware = (req, res, next) => {
   const upload = store.single("file");
   upload(req, res, function (err) {
     if (err) {
+      console.log(err);
       // check if our filetype error occurred
       if (err === "filetype") return res.status(400).send("Video files only");
       // An unknown error occurred when uploading.
-      console.log(err);
+
       return res.sendStatus(500);
     }
     // all good, proceed
@@ -78,35 +78,51 @@ const uploadMiddleware = (req, res, next) => {
   });
 };
 
-router.post("/upload", uploadMiddleware, async (req, res) => {
-  const { file } = req;
-  const { id } = file;
-  console.log("uploaded file: ", file);
-  return res.send(file.id);
+router.get("/", async (req, res) => {
+  try {
+    const files = await gfs.find().toArray();
+    res.json(files);
+  } catch (err) {
+    console.log(err);
+    res.status(400).send(err);
+  }
 });
 
-const deleteVideo = (id) => {
-  if (!id || id === "undefined") return res.status(400).send("no image id");
+router.post("/upload", uploadMiddleware, async (req, res) => {
+  let { file } = req;
+  //replace id with _id in the response
+  file = JSON.parse(JSON.stringify(file).split('"id":').join('"_id":'));
+  console.log("Uploaded file: ", file);
+  return res.json(file);
+});
+
+//Route for deleting a video
+
+router.delete("/:id", async (req, res) => {
+  const { id } = req.params;
+  console.log("deleting file: ", id);
+  if (!id || id === "undefined") return res.status(400).send("no video id");
   const _id = new mongoose.Types.ObjectId(id);
   gfs.delete(_id, (err) => {
     if (err) return res.status(500).send("video deletion error");
   });
-};
+  return res.sendStatus(200);
+});
 
-// this route will be accessed by any img tags on the front end which have
-// src tags like
-// <img src="/api/video/123456789" alt="example"/>
-// <img src={`/api/image/${user.profilePic}`} alt="example"/>
+//Route for getting a video
+
 router.get("/:id", ({ params: { id } }, res) => {
+  console.log("hello from get video");
   // if no id return error
-  if (!id || id === "undefined") return res.status(400).send("no video id");
+  if (!id || id === "undefined") return res.status(400).send("No video id");
   // if there is an id string, cast it to mongoose's objectId type
   const _id = new mongoose.Types.ObjectId(id);
-  // search for the image by id
+  // search for the file by id
   gfs.find({ _id }).toArray((err, files) => {
     if (!files || files.length === 0)
       return res.status(400).send("no files exist");
-    // if a file exists, send the data
+
+    // if a file exists, stream the file to the client
     gfs.openDownloadStream(_id).pipe(res);
   });
 });
